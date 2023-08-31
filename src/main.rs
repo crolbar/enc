@@ -1,3 +1,4 @@
+use rand::Rng;
 use std::fs;
 use std::io::{self, Read, Write};
 use clap::Parser;
@@ -25,34 +26,51 @@ fn main() -> io::Result<()> {
     fs::File::open(&args.file_path)?.read_to_end(&mut contents)?;
     
 
-    
+    // key reading/generation
     if let Some(key_path) = &args.key_file { // if there is an key file specified read it
         fs::File::open(key_path)?.read_to_end(&mut key)?;
-    } else if encoded(&contents) { // if the file is encoded aka the first thre chars are "enC"
+    } else if encoded(&contents) { // if the file is encoded aka the first three chars are "enC"
         println!("File `{}` is already encoded.", &args.file_path);
         std::process::exit(0);
     } else { // if there is not an key file specified and the file is not encoded generate an key file
         let mut key_file = args.file_path.clone();
         key_file.push_str(".key");
-        // for _ in 0..5 { // idk why im doing this but why not
-        //     key.push(rand::thread_rng().gen_range(0..255));
-        // }
-        key = vec![5];
+        for _ in 0..5 { // idk why im doing this but why not
+            key.push(rand::thread_rng().gen_range(0..255));
+        }
         fs::File::create(&key_file)?.write_all(&key)?;
     }
 
-    // prevent from encoding an encoded file
+    // encoding/decoding
     if !encoded(&contents) { // if the file is not encoded, encode it and add "enC" in frot of the contents of the file 
         contents = enc_dec(&contents, &key);
-        contents.splice(0..0, vec![101, 110, 67]);
-    } else { // if the file is encoded remove "enC" and output the original file
-        contents = enc_dec(&contents, &key);
-        contents.drain(0..3);
+        let id = usize::from(key_id(&key));
+        contents.splice(0..0, vec![101, 110, 67, id as u8]);
+        println!("File `{}` encoded", args.file_path);
+    } else { // if the file is encoded, decode it if we are using the right key and remove the temp values for identification
+        if key_id(&key) == usize::from(contents[3]) {
+            contents = enc_dec(&contents, &key);
+            contents.drain(0..4);
+            println!("File {} decoded", args.file_path);
+        } else {
+            println!("The key you provided is not the right key for the file `{}`", &args.file_path);
+            std::process::exit(0);
+        }
     }
 
 
     fs::File::create(&output_file_path())?.write_all(&contents)?;
     Ok(())
+}
+
+
+fn key_id(key: &[u8]) -> usize { // used prevent from encoding an encoded file with another key
+    let mut sum: usize = 0;      // make somewhat of an id for the key
+    for &num in key {
+        sum += usize::from(num);
+    }
+
+    sum / key.len()
 }
 
 
