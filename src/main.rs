@@ -1,8 +1,6 @@
 use rand::Rng;
-use std::fs::{File, self};
-use std::io::{Read, Write};
-use std::ops::Add;
-use std::process::abort;
+use std::fs;
+use std::io::{self, Read, Write};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -21,121 +19,63 @@ struct Enc {
 }
 
 
-fn main() {
-    let file_path = Enc::parse().file_path;
-    if fs::metadata(&file_path).is_ok() {
-        match Enc::parse().key_file {
-            Some(key_path) => {
-                if !key_path.contains(".crolkey") {
-                    println!("Invalid key file name (the key file has to end with .crolkey)");
-                    abort();
-                } else {
-                    create_file(decode(&key_path, &read_file(&file_path)));
-                    if Enc::parse().output_file_path.is_some() {
-                        println!("File `{}` decoded and saved as `{}`", file_path, output_file_path())
-                    } else {
-                        println!("File `{}` decoded", output_file_path())
-                    }
-                }
-            }
-            None => {
-                create_file(encode(&read_file(&file_path)));
-                println!("DO NOT:\nmodify the inner contents of the encoded file or the key (if you do you wont be able to decode it)\nencode the encoded file and output it with the same name (this overwrites the key so you will be able to decode it one time but the second time wont work)\nchange the .crolkey extention (if you change it the app wont work) if you want to change it just edit the source code");
-                if Enc::parse().output_file_path.is_some() {
-                    println!("File `{}` encoded and saved as `{}`", file_path, output_file_path())
-                } else {
-                    println!("File `{}` encoded", output_file_path())
-                }
-            }
-        }
-    } else {
-        println!("File `{}` dosn't exist.", file_path)
+fn main() -> io::Result<()> {
+    let args = Enc::parse();
+    let mut key = Vec::new();
+    let mut contents = Vec::new();
+    fs::File::open(&args.file_path)?.read_to_end(&mut contents)?;
+    
+
+    
+    if let Some(key_path) = &args.key_file { // if there is an key file specified read it
+        fs::File::open(key_path)?.read_to_end(&mut key)?;
+    } else if encoded(&contents) { // if the file is encoded aka the first thre chars are "enC"
+        println!("File `{}` is already encoded.", &args.file_path);
+        std::process::exit(0);
+    } else { // if there is not an key file specified and the file is not encoded generate an key file
+        let mut key_file = args.file_path.clone();
+        key_file.push_str(".key");
+        // for _ in 0..5 { // idk why im doing this but why not
+        //     key.push(rand::thread_rng().gen_range(0..255));
+        // }
+        key = vec![5];
+        fs::File::create(&key_file)?.write_all(&key)?;
     }
+
+    // prevent from encoding an encoded file
+    if !encoded(&contents) { // if the file is not encoded, encode it and add "enC" in frot of the contents of the file 
+        contents = enc_dec(&contents, &key);
+        contents.splice(0..0, vec![101, 110, 67]);
+    } else { // if the file is encoded remove "enC" and output the original file
+        contents = enc_dec(&contents, &key);
+        contents.drain(0..3);
+    }
+
+
+    fs::File::create(&output_file_path())?.write_all(&contents)?;
+    Ok(())
 }
 
 
-fn read_file(file_path: &String) -> String {
-    let mut contents = String::new();
-    match File::open(file_path) {
-        Ok(mut file) => if let Err(err) = file.read_to_string(&mut contents) { eprintln!("Error reading file: {}", err) },
-        Err(err) => eprintln!("Error reading file: {}", err)
+fn enc_dec(chars: &[u8], key: &[u8]) -> Vec<u8> {
+    let mut contents = chars.to_vec();
+
+    for &key_byte in key.iter() {
+        let mut temp = Vec::new();
+        for byte in contents.iter() {
+            temp.push(byte ^ key_byte);
+        }
+       contents = temp.clone();
     }
 
     contents
 }
 
-
-fn decode(key_path: &String, contents: &String) -> String {
-    let mut dec_contents = String::new();
-    let key = read_file(&key_path);
-
-    if key.split_whitespace().count() == contents.bytes().count() {
-        for byte in key.split_whitespace() {
-            if let Ok(byte) = byte.parse::<u8>() {
-                dec_contents.push(char::from(byte));
-            } 
-        }
-    } else {
-        println!("Wrong key for this file or you have modified the file or the key in some way.");
-        abort();
-    }
-
-    dec_contents
-}
-
-
-fn encode(contents: &String) -> String {
-    let mut enc_contents = String::new();
-    let mut key = String::new();
-    let bytes = &contents.bytes();
-
-
-    for byte in bytes.clone() {
-        let random = rand::thread_rng().gen_range(33..126);
-        key.push_str(&byte.to_string().add(" "));
-        enc_contents.push(char::from(random));
-    }
-    create_key_file(key);
-
-    enc_contents
-}
-
-
-fn create_file(contents: String) {
-    let mut file = match File::create(output_file_path()) {
-        Ok(file) => file,
-        Err(e) => {
-            println!("Error creating file: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = write!(file, "{}", contents) {
-            println!("Error writing to file: {}", e);
-    }
-}
-
-fn create_key_file(key: String) {
-    let mut file_path = output_file_path();
-    file_path.push_str(".crolkey");
-
-    let mut file = match File::create(file_path) {
-        Ok(file) => file,
-        Err(e) => {
-            println!("Error creating file: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = write!(file, "{}", key) {
-            println!("Error writing to file: {}", e);
-    }
-}
-
 fn output_file_path() -> String {
-    let file_path = match Enc::parse().output_file_path {
-        Some(file_path) => file_path,
-        None => Enc::parse().file_path
-    };
+    let file_path = Enc::parse().output_file_path.unwrap_or(Enc::parse().file_path);
     file_path
+}
+
+fn encoded(contents: &Vec<u8>) -> bool {
+    contents.iter().take(3).map(|&x| x as u32).sum::<u32>() == 278
 }
