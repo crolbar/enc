@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::fs;
 use std::io::{self, Read, Write};
 use clap::Parser;
