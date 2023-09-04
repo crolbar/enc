@@ -81,6 +81,7 @@ pub fn main() -> Result<(), eframe::Error> {
 
 
                 // encode/decode buttons
+                ui.add_space(10.0);
                 if !file_path.is_empty() && !key_path.is_empty() {
                     if ui.add(egui::Button::new("Encode/Decode").fill(egui::Color32::BLACK).min_size(egui::Vec2 { x: 100.0, y: 50.0 })).clicked() {
                         cli_output = gui_main(&file_path, output_file_path(&file_path, &output_path), &key_path);
@@ -92,7 +93,7 @@ pub fn main() -> Result<(), eframe::Error> {
                 }
 
 
-                ui.add_space(30.0);
+                ui.add_space(15.0);
                 if !cli_output.is_empty() { ui.label(&cli_output); }
             });
         });
